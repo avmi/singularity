@@ -47,7 +47,7 @@ func OciExec(containerID string, cmdArgs []string) error {
 		sylog.Fatalf("%s", err)
 	}
 
-	Env := []string{sylog.GetEnvVar()}
+	Env := sylog.GetEnvVar()
 
 	procName := fmt.Sprintf("Singularity OCI %s", containerID)
 	return exec.Pipe(starter, []string{procName}, Env, configData)

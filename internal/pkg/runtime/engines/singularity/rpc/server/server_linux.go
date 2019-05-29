@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/sylabs/singularity/pkg/util/crypt"
+
 	args "github.com/sylabs/singularity/internal/pkg/runtime/engines/singularity/rpc"
 	"github.com/sylabs/singularity/internal/pkg/sylog"
 	"github.com/sylabs/singularity/internal/pkg/util/mainthread"
@@ -30,6 +32,26 @@ func (t *Methods) Mount(arguments *args.MountArgs, reply *int) (err error) {
 	mainthread.Execute(func() {
 		err = syscall.Mount(arguments.Source, arguments.Target, arguments.Filesystem, arguments.Mountflags, arguments.Data)
 	})
+	return err
+}
+
+// Crypt decrypts the loop device
+func (t *Methods) Decrypt(arguments *args.CryptArgs, reply *string) (err error) {
+
+	sylog.Debugf("In Crypt RPC")
+	sylog.Debugf("Crypt RPC running in PID %d", os.Getpid())
+	sylog.Debugf("Loop device is %s", arguments.Loopdev)
+
+	crypt_dev := &crypt.Device{
+		MaxDevices: 256,
+	}
+
+	cdev_str, err := crypt_dev.GetCryptDevice(arguments.Loopdev)
+
+	sylog.Debugf("Crypt device is %s\n", cdev_str)
+
+	*reply = cdev_str
+
 	return err
 }
 
@@ -134,6 +156,7 @@ func (t *Methods) LoopDevice(arguments *args.LoopArgs, reply *int) error {
 	} else {
 		var err error
 		image, err = os.OpenFile(arguments.Image, arguments.Mode, 0600)
+		defer image.Close()
 		if err != nil {
 			return fmt.Errorf("could not open image file: %v", err)
 		}

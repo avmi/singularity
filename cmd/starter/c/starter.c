@@ -820,11 +820,12 @@ static void cleanenv(void) {
     }
 
     /* 
-     * keep only SINGULARITY_MESSAGELEVEL for GO runtime, set others to empty
-     * string and not NULL (see issue #3703 for why)
+     * Make an exception for SINGULARITY_MESSAGELEVEL AND PATH for GO runtime
+     * Set others to empty string and not NULL (see issue #3703 for why)
      */
     for (e = environ; *e != NULL; e++) {
-        if ( strncmp(MSGLVL_ENV "=", *e, sizeof(MSGLVL_ENV)) != 0 ) {
+        if (strncmp(MSGLVL_ENV "=", *e, sizeof(MSGLVL_ENV)) != 0 &&
+            strncmp("PATH", *e, sizeof("PATH") != 0))
             *e = "";
         }
     }

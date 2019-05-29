@@ -65,7 +65,7 @@ func OciCreate(containerID string, args *OciArgs) error {
 		return fmt.Errorf("failed to parse OCI specification file %s: %s", configJSON, err)
 	}
 
-	Env := []string{sylog.GetEnvVar()}
+	Env := sylog.GetEnvVar()
 
 	engineConfig.EmptyProcess = args.EmptyProcess
 	engineConfig.SyncSocket = args.SyncSocketPath

@@ -25,13 +25,14 @@ import (
 	"github.com/sylabs/singularity/internal/pkg/sylog"
 	"github.com/sylabs/singularity/pkg/build/types"
 	singularityConfig "github.com/sylabs/singularity/pkg/runtime/engines/singularity/config"
+	"github.com/sylabs/singularity/pkg/util/crypt"
 )
 
 // SIFAssembler doesnt store anything
 type SIFAssembler struct {
 }
 
-func createSIF(path string, definition, ociConf []byte, squashfile string) (err error) {
+func createSIF(path string, definition, ociConf []byte, squashfile string, encrypted bool) (err error) {
 	// general info for the new SIF file creation
 	cinfo := sif.CreateInfo{
 		Pathname:   path,
@@ -46,6 +47,7 @@ func createSIF(path string, definition, ociConf []byte, squashfile string) (err 
 		Groupid:  sif.DescrDefaultGroup,
 		Link:     sif.DescrUnusedLink,
 		Data:     definition,
+		Encrypt:  true,
 	}
 	definput.Size = int64(binary.Size(definput.Data))
 
@@ -90,7 +92,11 @@ func createSIF(path string, definition, ociConf []byte, squashfile string) (err 
 	parinput.Fp = fp
 	parinput.Size = fi.Size()
 
-	err = parinput.SetPartExtra(sif.FsSquash, sif.PartPrimSys, sif.GetSIFArch(runtime.GOARCH))
+	if encrypted == false {
+		err = parinput.SetPartExtra(sif.FsSquash, sif.PartPrimSys, sif.GetSIFArch(runtime.GOARCH))
+	} else {
+		err = parinput.SetPartExtra(sif.FsEncrypt, sif.PartPrimSys, sif.GetSIFArch(runtime.GOARCH))
+	}
 	if err != nil {
 		return
 	}
@@ -139,45 +145,69 @@ func getMksquashfsPath() (string, error) {
 func (a *SIFAssembler) Assemble(b *types.Bundle, path string) (err error) {
 	sylog.Infof("Creating SIF file...")
 
-	mksquashfs, err := getMksquashfsPath()
-	if err != nil {
-		return fmt.Errorf("While searching for mksquashfs: %v", err)
+	var fsPath string
+
+	sylog.Debugf("Encrypted loop device is %s", b.LoopPath)
+
+	encrypted := false
+	if b.LoopPath != "" {
+		encrypted = true
 	}
 
-	f, err := ioutil.TempFile(b.Path, "squashfs-")
-	squashfsPath := f.Name() + ".img"
-	f.Close()
-	os.Remove(f.Name())
-	os.Remove(squashfsPath)
-	defer os.Remove(squashfsPath)
+	if encrypted == true {
+		err = syscall.Unmount(b.Rootfs(), 0)
+		if err != nil {
+			return fmt.Errorf("Unable to unmount Rootfs: %s err: %s", b.Rootfs(), err)
+		}
 
-	args := []string{b.Rootfs(), squashfsPath, "-noappend"}
+		cryptDev := &crypt.Device{}
+		err = cryptDev.DeleteCryptDevice(b.LoopPath)
+		if err != nil {
+			sylog.Debugf("Unable to delete crypt device: %s", b.LoopPath)
+			return err
+		}
 
-	// build squashfs with all-root flag when building as a user
-	if syscall.Getuid() != 0 {
-		args = append(args, "-all-root")
+		sylog.Debugf("Successfully closed crypt device")
+		fsPath = b.Path + "/sparse_fs.loop"
+	} else {
+		mksquashfs, err := getMksquashfsPath()
+		if err != nil {
+			return fmt.Errorf("While searching for mksquashfs: %v", err)
+		}
+		f, err := ioutil.TempFile(b.Path, "squashfs-")
+		fsPath = f.Name() + ".img"
+		f.Close()
+		os.Remove(f.Name())
+		os.Remove(fsPath)
+		defer os.Remove(fsPath)
+		args := []string{b.Rootfs(), fsPath, "-noappend"}
+
+		// build squashfs with all-root flag when building as a user
+		if syscall.Getuid() != 0 {
+			args = append(args, "-all-root")
+		}
+
+		mksquashfsCmd := exec.Command(mksquashfs, args...)
+		stderr, err := mksquashfsCmd.StderrPipe()
+		if err != nil {
+			return fmt.Errorf("While setting up stderr pipe: %v", err)
+		}
+
+		if err := mksquashfsCmd.Start(); err != nil {
+			return fmt.Errorf("While starting mksquashfs: %v", err)
+		}
+
+		errOut, err := ioutil.ReadAll(stderr)
+		if err != nil {
+			return fmt.Errorf("While reading mksquashfs stderr: %v", err)
+		}
+
+		if err := mksquashfsCmd.Wait(); err != nil {
+			return fmt.Errorf("While running mksquashfs: %v: %s", err, strings.Replace(string(errOut), "\n", " ", -1))
+		}
 	}
 
-	mksquashfsCmd := exec.Command(mksquashfs, args...)
-	stderr, err := mksquashfsCmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("While setting up stderr pipe: %v", err)
-	}
-
-	if err := mksquashfsCmd.Start(); err != nil {
-		return fmt.Errorf("While starting mksquashfs: %v", err)
-	}
-
-	errOut, err := ioutil.ReadAll(stderr)
-	if err != nil {
-		return fmt.Errorf("While reading mksquashfs stderr: %v", err)
-	}
-
-	if err := mksquashfsCmd.Wait(); err != nil {
-		return fmt.Errorf("While running mksquashfs: %v: %s", err, strings.Replace(string(errOut), "\n", " ", -1))
-	}
-
-	err = createSIF(path, b.Recipe.Raw, b.JSONObjects["oci-config"], squashfsPath)
+	err = createSIF(path, b.Recipe.Raw, b.JSONObjects["oci-config"], fsPath, encrypted)
 	if err != nil {
 		return fmt.Errorf("While creating SIF: %v", err)
 	}

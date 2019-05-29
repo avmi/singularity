@@ -421,7 +421,7 @@ func execStarter(cobraCmd *cobra.Command, image string, args []string, name stri
 		sylog.Warningf("can't determine current working directory: %s", err)
 	}
 
-	Env := []string{sylog.GetEnvVar()}
+	Env := sylog.GetEnvVar()
 
 	generator.AddProcessEnv("SINGULARITY_APPNAME", AppName)
 

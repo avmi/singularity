@@ -8,11 +8,14 @@ package types
 import (
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 
 	ocitypes "github.com/containers/image/types"
 	"github.com/sylabs/singularity/internal/pkg/client/cache"
 	"github.com/sylabs/singularity/internal/pkg/sylog"
+	"github.com/sylabs/singularity/pkg/util/crypt"
 )
 
 // Bundle is the temporary build environment used during the image
@@ -38,10 +41,13 @@ type Bundle struct {
 	BindPath    []string          `json:"bindPath"`
 	Path        string            `json:"bundlePath"`
 	Opts        Options           `json:"opts"`
+	LoopPath    string            `json:"loopPath"`
 }
 
 // Options defines build time behavior to be executed on the bundle
 type Options struct {
+	// Encrypt specifies if the filesystem needs to be encrypteded
+	Encrypt bool `json:"encrypt"`
 	// sections are the parts of the definition to run during the build
 	Sections []string `json:"sections"`
 	// TmpDir specifies a non-standard temporary location to perform a build
@@ -70,7 +76,7 @@ type Options struct {
 }
 
 // NewBundle creates a Bundle environment
-func NewBundle(bundleDir, bundlePrefix string) (b *Bundle, err error) {
+func NewBundle(encrypted bool, bundleDir, bundlePrefix string) (b *Bundle, err error) {
 	b = &Bundle{}
 	b.JSONObjects = make(map[string][]byte)
 
@@ -88,9 +94,45 @@ func NewBundle(bundleDir, bundlePrefix string) (b *Bundle, err error) {
 		"rootfs": "fs",
 	}
 
+	if encrypted == true {
+
+		cryptDev := &crypt.Device{
+			MaxDevices: 256,
+		}
+
+		loop, cdevStr, err := cryptDev.FormatCryptDevice(b.Path)
+
+		sylog.Debugf("Crypt device is %s", cdevStr)
+		sylog.Debugf("Loop device is %s", loop)
+
+		// Create an EXT3 FS in the mapped device
+		cmd := exec.Command("mkfs.ext3", cdevStr)
+		cmd.Dir = "/dev/mapper"
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			sylog.Verbosef("Out is %s, err is %s", out, err)
+			return nil, err
+		}
+
+		// Save the name of the crypt device to delete it later
+		b.LoopPath = cdevStr
+	}
+
 	for _, fso := range b.FSObjects {
 		if err = os.MkdirAll(filepath.Join(b.Path, fso), 0755); err != nil {
 			return
+		}
+		if encrypted {
+			device := "/dev/mapper/" + b.LoopPath
+			sylog.Debugf("Device to mount is %s", device)
+			err = syscall.Mount(device, b.Rootfs(), "ext3", syscall.MS_NOSUID, "")
+			if err != nil {
+				sylog.Debugf("Unable to mount err: %s", err)
+			}
+			err = syscall.Rmdir(b.Rootfs() + "/lost+found")
+			if err != nil {
+				sylog.Debugf("Unable to mount err: %s", err)
+			}
 		}
 	}
 

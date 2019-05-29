@@ -8,7 +8,6 @@
 package sylog
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -48,8 +47,8 @@ func GetLevel() int {
 
 // GetEnvVar is a dummy function returning environment variable
 // with lowest message level.
-func GetEnvVar() string {
-	return fmt.Sprintf("SINGULARITY_MESSAGELEVEL=-1")
+func GetEnvVar() []string {
+	return []string{"SINGULARITY_MESSAGELEVEL=-1"}
 }
 
 // Writer is a dummy function returning ioutil.Discard writer.

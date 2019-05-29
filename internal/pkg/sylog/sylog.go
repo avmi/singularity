@@ -178,8 +178,11 @@ func GetLevel() int {
 
 // GetEnvVar returns a formatted environment variable string which
 // can later be interpreted by init() in a child proc
-func GetEnvVar() string {
-	return fmt.Sprintf("SINGULARITY_MESSAGELEVEL=%d", loggerLevel)
+func GetEnvVar() []string {
+	var retSlice []string
+	msgEnv := fmt.Sprintf("SINGULARITY_MESSAGELEVEL=%d", loggerLevel)
+	pathEnv := "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	return append(retSlice, msgEnv, pathEnv)
 }
 
 // Writer returns an io.Writer to pass to an external packages logging utility.

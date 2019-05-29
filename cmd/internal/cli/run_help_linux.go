@@ -66,7 +66,7 @@ var RunHelpCmd = &cobra.Command{
 		a := []string{"/bin/sh", "-c", getCommand(getHelpPath(cmd))}
 		starter := buildcfg.LIBEXECDIR + "/singularity/bin/starter-suid"
 		procname := "Singularity help"
-		Env := []string{sylog.GetEnvVar()}
+		Env := sylog.GetEnvVar()
 
 		engineConfig := singularityConfig.NewConfig()
 		ociConfig := &oci.Config{}
