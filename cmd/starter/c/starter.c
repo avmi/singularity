@@ -827,7 +827,6 @@ static void cleanenv(void) {
         if (strncmp(MSGLVL_ENV "=", *e, sizeof(MSGLVL_ENV)) != 0 &&
             strncmp("PATH", *e, sizeof("PATH") != 0))
             *e = "";
-        }
     }
 }
 
